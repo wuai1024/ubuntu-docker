@@ -2,101 +2,39 @@ name: docker build
 
 on:
   push:
-    tags:
-      - '*'
+    branches: [ main ]
 
 env:
   TZ: Asia/Shanghai
 
 jobs:
-  build-jdk17:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Set JDK Version
-        id: set-jdk-version
-        run: echo "::set-output name=jdk_version::17.0.9" # java版本号
-      - name: Extract JDK Major Version
-        id: extract-major-version
-        run: echo "::set-output name=major_version::$(echo ${{ steps.set-jdk-version.outputs.jdk_version }} | cut -d'.' -f1)"
-      - name: Docker build
-        run: |
-          echo "开始下载jdk......"
-          wget -q https://download.oracle.com/java/${{ steps.extract-major-version.outputs.major_version }}/archive/jdk-${{ steps.set-jdk-version.outputs.jdk_version }}_linux-x64_bin.tar.gz
-          echo "下载完成"
-          tar -xvf jdk*
-          mv jdk-${{ steps.set-jdk-version.outputs.jdk_version }} jdk
-          
-          docker build \
-            -t ${{ secrets.DOCKERHUB_USERNAME }}/jdk${{ steps.extract-major-version.outputs.major_version }}:latest \
-            -t ${{ secrets.ACR_URL }}/yk-base/jdk${{ steps.extract-major-version.outputs.major_version }}:latest \
-            -t ${{ secrets.DOCKERHUB_USERNAME }}/jdk${{ steps.extract-major-version.outputs.major_version }}:${{ steps.set-jdk-version.outputs.jdk_version }} \
-            -t ${{ secrets.ACR_URL }}/yk-base/jdk${{ steps.extract-major-version.outputs.major_version }}:${{ steps.set-jdk-version.outputs.jdk_version }} \
-            .
-      - name: Login to DockerHub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Docker Push to Dockerhub
-        run: |
-          docker images | grep -E '${{ secrets.DOCKERHUB_USERNAME }}/jdk17' | awk '{print "docker push "$1":"$2}' | sh
-      - name: Login to Aliyun Container Registry (ACR)
-        uses: aliyun/acr-login@v1
-        with:
-          login-server: ${{ secrets.ACR_URL }}
-          region-id: cn-shanghai
-          username: ${{ secrets.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
-      - name: Docker Push to ACR
-        run: |
-          docker images | grep -E 'yk-base/jdk17' | awk '{print "docker push "$1":"$2}' | sh
-
-  build-jdk17-alpine:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Set JDK Version
-        id: set-jdk-version
-        run: echo "::set-output name=jdk_version::17.0.9" # java版本号
-      - name: Extract JDK Major Version
-        id: extract-major-version
-        run: echo "::set-output name=major_version::$(echo ${{ steps.set-jdk-version.outputs.jdk_version }} | cut -d'.' -f1)"
-      - name: Docker build
+      - name: Dockerfile build
         run: |
           docker build \
-          -t ${{ secrets.ACR_URL }}/yk-base/jdk${{ steps.extract-major-version.outputs.major_version }}-alpine:latest \
-          -t ${{ secrets.ACR_URL }}/yk-base/jdk${{ steps.extract-major-version.outputs.major_version }}-alpine:${{ steps.set-jdk-version.outputs.jdk_version }} \
-          -t ${{ secrets.DOCKERHUB_USERNAME }}/jdk${{ steps.extract-major-version.outputs.major_version }}-alpine:latest \
-          -t ${{ secrets.DOCKERHUB_USERNAME }}/jdk${{ steps.extract-major-version.outputs.major_version }}-alpine:${{ steps.set-jdk-version.outputs.jdk_version }} \
+          -t ${{ secrets.ACR_URL }}/yk-base/ubuntu-docker:latest \
+          -t ${{ secrets.ACR_URL }}/yk-base/ubuntu-docker:${{ github.sha }} \
           - << EOF
-          # 使用Alpine Linux 3.15作为基础镜像
-          FROM alpine
+          # 使用基础镜像为Ubuntu
+          FROM ubuntu
           
-          # 设置环境变量
-          ENV JAVA_HOME=/usr/lib/jvm/default-jvm
-          ENV PATH=$PATH:$JAVA_HOME/bin
+          # 设置时区为上海
           ENV TZ=Asia/Shanghai
           
-          # 更新包索引并安装OpenJDK 17
-          RUN apk update \
-          && apk add --no-cache tzdata openjdk17 \
-          && cp /usr/share/zoneinfo/$TZ /etc/localtime \
-          && echo $TZ > /etc/timezone \
-          && apk del tzdata \
-          && rm -rf /var/cache/apk/*
+          # 设置时区为上海，安装必要的工具，并清理不需要的软件包
+          RUN apt-get update \
+              && apt-get install -y vim curl wget docker.io \
+              && apt-get autoremove -y \
+              && apt-get clean \
+              && rm -rf /var/lib/apt/lists/* \
+              && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime \
+              && echo $TZ > /etc/timezone
           
-          # 容器启动命令
-          CMD ["java", "-version"]
+          # 启动一个bash shell
+          CMD ["/bin/bash"] 
           EOF
-      - name: Login to DockerHub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Docker Push to Dockerhub
-        run: |
-          docker images | grep -E '${{ secrets.DOCKERHUB_USERNAME }}' | awk '{print "docker push "$1":"$2}' | sh
       - name: Login to Aliyun Container Registry (ACR)
         uses: aliyun/acr-login@v1
         with:
